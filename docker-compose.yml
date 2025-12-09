@@ -1,0 +1,23 @@
+name: agenda_downloader
+services:
+  agenda_downloader:
+    build: .
+    command: python /app/agenda_downloader.py
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+      - ./cities.yaml:/app/cities.yaml:ro
+    restart: unless-stopped
+
+  agenda_summarizer:
+    build: .
+    command: python /app/run_summarizer.py
+    env_file:
+      - .env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./data:/data
+      - ./cities.yaml:/app/cities.yaml:ro
+    restart: unless-stopped
