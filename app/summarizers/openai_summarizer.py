@@ -2,11 +2,47 @@ import os, fitz, requests
 from openai import OpenAI
 from .base_summarizer import BaseSummarizer
 from notifiers.discord_notify import send_discord_message
+from notifiers.teams_notify import send_ms_teams_message
+
+DEFAULT_PROMPT_TEMPLATE = """
+You are a civil engineering and planning analyst. You want to be able to inform friends and family about what is going on in the city.
+Read the following city council meeting agenda and produce a concise, structured Markdown summary of only the items that have engineering, planning, zoning, infrastructure, or capital project relevance.
+
+Focus on:
+- Zoning or land-use changes (include parcel/street info)
+- Subdivisions, site plans, or developments
+- Road, traffic, or transportation projects
+- Water, sewer, storm drain, or utility upgrades
+- Engineering studies, capital projects, grants, or contracts
+- Any fiscal or policy actions that affect construction or infrastructure
+Exclude:
+- Ceremonial items, proclamations, recognitions, or awards
+- Minutes approval, consent agendas, or administrative procedures
+- Public comments unrelated to engineering
+
+Format the output like this:
+
+## Key Engineering Actions
+- [One-sentence bullet per action or motion, include project/location]
+## Notable Locations or Projects
+- [Street names, subdivisions, or landmarks referenced]
+## Funding / Contracts
+- [Any bids, grants, or budgets related to infrastructure]
+
+Keep it factual, concise, and neutral.
+Do not include meeting logistics, pledges, or adjournment.
+
+Now summarize the following agenda text:
+
+{{AGENDA_TEXT}}
+"""
+
 
 class OpenaiSummarizer(BaseSummarizer):
-    def __init__(self, *args, discord_webhook=None, **kwargs):
-        super().__init__(*args, discord_webhook=discord_webhook, **kwargs)
+    def __init__(self, *args, discord_webhook=None, teams_webhook=None, **kwargs):
+        super().__init__(*args, discord_webhook=discord_webhook, teams_webhook=teams_webhook, **kwargs)
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.prompt_template = self._load_prompt_template()
         #self.n8n_webhook = os.getenv("N8N_WEBHOOK_URL")
 
     def extract_text(self, pdf_path):
@@ -25,39 +61,7 @@ class OpenaiSummarizer(BaseSummarizer):
             return self._read_plain_text(pdf_path)
 
     def summarize_text(self, text, title):
-        prompt = f"""
-
-You are a civil engineering and planning analyst. You want to be able to inform friends and family about what is going on in the city. 
-Read the following city council meeting agenda and produce a concise, structured Markdown summary of only the items that have engineering, planning, zoning, infrastructure, or capital project relevance. 
-
-Focus on: 
-- Zoning or land-use changes (include parcel/street info)
-- Subdivisions, site plans, or developments
-- Road, traffic, or transportation projects
-- Water, sewer, storm drain, or utility upgrades
-- Engineering studies, capital projects, grants, or contracts
-- Any fiscal or policy actions that affect construction or infrastructure 
-Exclude: 
-- Ceremonial items, proclamations, recognitions, or awards 
-- Minutes approval, consent agendas, or administrative procedures 
-- Public comments unrelated to engineering 
-
-Format the output like this: 
-
-## Key Engineering Actions
-- [One-sentence bullet per action or motion, include project/location]
-## Notable Locations or Projects
-- [Street names, subdivisions, or landmarks referenced] 
-## Funding / Contracts 
-- [Any bids, grants, or budgets related to infrastructure] 
-
-Keep it factual, concise, and neutral.
-Do not include meeting logistics, pledges, or adjournment.
-
-Now summarize the following agenda text:
-
-{text[:80000]}
-"""
+        prompt = self.prompt_template.replace("{{AGENDA_TEXT}}", text[:80000]).replace("{{TITLE}}", title or "")
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -72,6 +76,7 @@ Now summarize the following agenda text:
         excerpt = self._read_summary_excerpt(summary_path)
         #self._notify_n8n(title, excerpt)
         self._notify_discord(title, city, feed, doc_type, pdf_url, excerpt)
+        self._notify_teams(title, city, feed, doc_type, pdf_url, excerpt)
 
     def _read_summary_excerpt(self, summary_path, limit=1500):
         try:
@@ -144,3 +149,34 @@ Now summarize the following agenda text:
         if len(content) > 1900:
             content = content[:1900] + "..."
         send_discord_message(self.discord_webhook, content)
+
+    def _notify_teams(self, title, city, feed, doc_type, pdf_url, excerpt):
+        print(f"[DEBUG] _notify_teams called")
+        print(f"[DEBUG] self.teams_webhook = {self.teams_webhook}")
+        heading = f"{city} - {feed} ({doc_type})"
+        body_lines = [heading]
+        if title:
+            body_lines.append(title)
+        if excerpt:
+            body_lines.append("")
+            body_lines.append(excerpt)
+        body_lines.append("")
+        body_lines.append(f"Original PDF: {pdf_url}")
+        content = "\n".join(body_lines)
+        if len(content) > 3500:
+            content = content[:3500] + "..."
+        send_ms_teams_message(content, webhook_url=self.teams_webhook)
+
+    def _load_prompt_template(self):
+        path = os.getenv("PROMPT_TEMPLATE_PATH")
+        if not path:
+            return DEFAULT_PROMPT_TEMPLATE.strip()
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = f.read().strip()
+            if not data:
+                return DEFAULT_PROMPT_TEMPLATE.strip()
+            return data
+        except Exception as exc:
+            print(f"[WARN] Could not load PROMPT_TEMPLATE_PATH {path}: {exc}")
+            return DEFAULT_PROMPT_TEMPLATE.strip()

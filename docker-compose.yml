@@ -5,9 +5,12 @@ services:
     command: python /app/agenda_downloader.py
     env_file:
       - .env
+    environment:
+      - PMN_CONFIG_PATH=/app/pmn_sources.example.yaml
+      - DB_PATH=${DB_PATH:-/data/utah_pmn.db}
     volumes:
       - ./data:/data
-      - ./cities.yaml:/app/cities.yaml:ro
+      - ./pmn_sources.example.yaml:/app/pmn_sources.example.yaml:ro
     restart: unless-stopped
 
   agenda_summarizer:
@@ -17,7 +20,10 @@ services:
       - .env
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PMN_CONFIG_PATH=/app/pmn_sources.example.yaml
+      - DB_PATH=${DB_PATH:-/data/utah_pmn.db}
+      - PROMPT_TEMPLATE_PATH=${PROMPT_TEMPLATE_PATH:-/app/prompt_template.default.txt}
     volumes:
       - ./data:/data
-      - ./cities.yaml:/app/cities.yaml:ro
+      - ./pmn_sources.example.yaml:/app/pmn_sources.example.yaml:ro
     restart: unless-stopped

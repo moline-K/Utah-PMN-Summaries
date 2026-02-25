@@ -1,0 +1,11 @@
+.git
+.gitignore
+.env
+.env.*
+__pycache__/
+*.py[cod]
+data/
+app/logs/
+pipeline_*.log
+custom_summary_prompt.txt
+PQ_Scripts.pq

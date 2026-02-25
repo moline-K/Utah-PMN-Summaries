@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-import os, importlib, sqlite3, datetime, yaml
-from pathlib import Path
+import os, sqlite3, datetime, yaml
+from scrapers import utah_pmn
 
 DATA_DIR = os.getenv("DATA_DIR", "/data")
-DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "council.db"))
-CONFIG_PATH = os.getenv("CONFIG_PATH", "cities.yaml")
+DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "utah_pmn.db"))
+PMN_CONFIG_PATH = os.getenv("PMN_CONFIG_PATH", "pmn_sources.example.yaml")
 
 def get_db_conn():
     conn = sqlite3.connect(DB_PATH)
@@ -20,44 +20,126 @@ def get_db_conn():
         downloaded_at TEXT,
         summarized INTEGER DEFAULT 0,
         summary_path TEXT,
-        summary_timestamp TEXT
+        summary_timestamp TEXT,
+        notice_id TEXT,
+        notice_url TEXT,
+        source_name TEXT,
+        government_type TEXT,
+        entity TEXT,
+        public_body TEXT,
+        public_body_id TEXT,
+        attachment_category TEXT,
+        attachment_date_added TEXT,
+        event_datetime_raw TEXT
+        ,notice_tags TEXT
+        ,description_agenda TEXT
+        ,attachment_count INTEGER
+        ,attachment_urls TEXT
     )""")
+    _ensure_column(conn, "agendas", "notice_id", "TEXT")
+    _ensure_column(conn, "agendas", "notice_url", "TEXT")
+    _ensure_column(conn, "agendas", "source_name", "TEXT")
+    _ensure_column(conn, "agendas", "government_type", "TEXT")
+    _ensure_column(conn, "agendas", "entity", "TEXT")
+    _ensure_column(conn, "agendas", "public_body", "TEXT")
+    _ensure_column(conn, "agendas", "public_body_id", "TEXT")
+    _ensure_column(conn, "agendas", "attachment_category", "TEXT")
+    _ensure_column(conn, "agendas", "attachment_date_added", "TEXT")
+    _ensure_column(conn, "agendas", "event_datetime_raw", "TEXT")
+    _ensure_column(conn, "agendas", "notice_tags", "TEXT")
+    _ensure_column(conn, "agendas", "description_agenda", "TEXT")
+    _ensure_column(conn, "agendas", "attachment_count", "INTEGER")
+    _ensure_column(conn, "agendas", "attachment_urls", "TEXT")
     return conn
 
-def log_pdf(conn, city, feed_name, title, pdf_url, local_path):
+def _ensure_column(conn, table_name, column_name, column_type):
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})")}
+    if column_name not in existing:
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+        conn.commit()
+
+def log_pdf(conn, city, feed_name, title, pdf_url, local_path, metadata=None):
+    metadata = metadata or {}
     conn.execute("""
         INSERT OR IGNORE INTO agendas
-        (city, feed_name, meeting_title, pdf_url, local_path, downloaded_at)
-        VALUES (?, ?, ?, ?, ?, ?)""",
-        (city, feed_name, title, pdf_url, local_path, datetime.datetime.now().isoformat()))
+        (
+            city, feed_name, meeting_title, meeting_date, pdf_url, local_path, downloaded_at,
+            notice_id, notice_url, source_name, government_type, entity, public_body, public_body_id,
+            attachment_category, attachment_date_added, event_datetime_raw,
+            notice_tags, description_agenda, attachment_count, attachment_urls
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            city,
+            feed_name,
+            title,
+            metadata.get("meeting_date"),
+            pdf_url,
+            local_path,
+            datetime.datetime.now().isoformat(),
+            metadata.get("notice_id"),
+            metadata.get("notice_url"),
+            metadata.get("source_name"),
+            metadata.get("government_type"),
+            metadata.get("entity"),
+            metadata.get("public_body"),
+            metadata.get("public_body_id"),
+            metadata.get("attachment_category"),
+            metadata.get("attachment_date_added"),
+            metadata.get("event_datetime_raw"),
+            metadata.get("notice_tags"),
+            metadata.get("description_agenda"),
+            metadata.get("attachment_count"),
+            metadata.get("attachment_urls"),
+        ))
     conn.commit()
 
+def load_pmn_sources(config_path):
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f) or {}
+    return config.get("sources", [])
+
+
 def main():
-    with open(CONFIG_PATH, "r") as f:
-        config = yaml.safe_load(f)
+    sources = load_pmn_sources(PMN_CONFIG_PATH)
     conn = get_db_conn()
-    existing_urls = set(row[0] for row in conn.execute("SELECT pdf_url FROM agendas"))
+    existing_notice_ids = set(
+        row[0] for row in conn.execute("SELECT notice_id FROM agendas WHERE notice_id IS NOT NULL")
+    )
 
-    for city_cfg in config["cities"]:
-        name = city_cfg["name"]
-        scraper_name = city_cfg.get("scraper", "civicplus")
-        base_url = city_cfg["base_url"]
-        scraper = importlib.import_module(f"scrapers.{scraper_name}")
+    for source in sources:
+        entity = source.get("entity", source.get("name", "Unknown Entity"))
+        public_body = source.get("public_body", source.get("name", "Unknown Public Body"))
+        base_url = source.get("base_url", "https://www.utah.gov/pmn").rstrip("/")
+        public_body_id = str(source.get("public_body_id", "")).strip()
+        if not public_body_id:
+            print(f"[WARN] Skipping source with missing public_body_id: {source.get('name', '<unnamed>')}")
+            continue
+        feed_url = f"{base_url}/sitemap/publicbody/{public_body_id}.html"
+        storage_dir = source.get("storage_dir")
 
-        print(f"\n=== Processing {name} ===")
-        for feed in city_cfg["feeds"]:
-            feed_name = feed["name"]
-            print(f"→ Feed: {feed_name}")
-            items = scraper.scrape_feed(
-                feed["url"],
-                base_url,
-                name,
-                feed_name,
-                known_urls=existing_urls,
+        print(f"\n=== Processing {entity} / {public_body} ===")
+        items = utah_pmn.scrape_feed(
+            feed_url,
+            base_url,
+            entity,
+            public_body,
+            known_notice_ids=existing_notice_ids,
+            storage_dir=storage_dir,
+            source_meta=source,
+        )
+        for record in items:
+            log_pdf(
+                conn,
+                entity,
+                public_body,
+                record["title"],
+                record["pdf_url"],
+                record["local_path"],
+                metadata=record,
             )
-            for record in items:
-                log_pdf(conn, name, feed_name, record["title"], record["pdf_url"], record["local_path"])
-                existing_urls.add(record["pdf_url"])
+            if record.get("notice_id"):
+                existing_notice_ids.add(record["notice_id"])
 
     conn.close()
     print("\n✅ Download complete.")

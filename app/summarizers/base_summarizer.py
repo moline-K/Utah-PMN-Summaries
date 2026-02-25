@@ -2,12 +2,13 @@ import os, sqlite3, datetime, shutil, re
 from pathlib import Path
 
 class BaseSummarizer:
-    def __init__(self, db_path=None, data_dir=None, discord_webhook=None):
+    def __init__(self, db_path=None, data_dir=None, discord_webhook=None, teams_webhook=None):
         self.data_dir = data_dir or os.getenv("DATA_DIR", "/data")
         self.db_path = db_path or os.getenv("DB_PATH", os.path.join(self.data_dir, "council.db"))
         self.archive_root = os.path.join(self.data_dir, "archive")
         self.summary_root = os.path.join(self.data_dir, "summaries")
         self.discord_webhook = discord_webhook
+        self.teams_webhook = teams_webhook
         os.makedirs(self.archive_root, exist_ok=True)
         os.makedirs(self.summary_root, exist_ok=True)
 

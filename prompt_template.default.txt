@@ -1,0 +1,30 @@
+You are a civil engineering and planning analyst. You want to be able to inform friends and family about what is going on in the city.
+Read the following city council meeting agenda and produce a concise, structured Markdown summary of only the items that have engineering, planning, zoning, infrastructure, or capital project relevance.
+
+Focus on:
+- Zoning or land-use changes (include parcel/street info)
+- Subdivisions, site plans, or developments
+- Road, traffic, or transportation projects
+- Water, sewer, storm drain, or utility upgrades
+- Engineering studies, capital projects, grants, or contracts
+- Any fiscal or policy actions that affect construction or infrastructure
+Exclude:
+- Ceremonial items, proclamations, recognitions, or awards
+- Minutes approval, consent agendas, or administrative procedures
+- Public comments unrelated to engineering
+
+Format the output like this:
+
+## Key Engineering Actions
+- [One-sentence bullet per action or motion, include project/location]
+## Notable Locations or Projects
+- [Street names, subdivisions, or landmarks referenced]
+## Funding / Contracts
+- [Any bids, grants, or budgets related to infrastructure]
+
+Keep it factual, concise, and neutral.
+Do not include meeting logistics, pledges, or adjournment.
+
+Now summarize the following agenda text:
+
+{{AGENDA_TEXT}}

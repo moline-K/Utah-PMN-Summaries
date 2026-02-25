@@ -1,0 +1,17 @@
+# Each entry targets a single public body on the Utah Public Meeting Notice site.
+sources:
+  - name: salt_lake_city_council
+    government_type: municipality
+    entity: Salt Lake City
+    public_body: Salt Lake City Council
+    public_body_id: "1360"
+    base_url: https://www.utah.gov/pmn
+    storage_dir: /data/incoming/PMN/salt_lake_city/city_council
+
+  - name: salt_lake_city_planning_commission
+    government_type: municipality
+    entity: Salt Lake City
+    public_body: Planning Commission
+    public_body_id: "1274"
+    base_url: https://www.utah.gov/pmn
+    storage_dir: /data/incoming/PMN/salt_lake_city/planning_commission
