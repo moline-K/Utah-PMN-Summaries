@@ -4,7 +4,7 @@ from scrapers import utah_pmn
 
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "utah_pmn.db"))
-PMN_CONFIG_PATH = os.getenv("PMN_CONFIG_PATH", "pmn_sources.example.yaml")
+PMN_CONFIG_PATH = os.getenv("PMN_CONFIG_PATH", "pmn_sources.yaml")
 
 def get_db_conn():
     conn = sqlite3.connect(DB_PATH)
@@ -26,8 +26,12 @@ def get_db_conn():
         source_name TEXT,
         government_type TEXT,
         entity TEXT,
+        entity_id TEXT,
         public_body TEXT,
         public_body_id TEXT,
+        county TEXT,
+        route_key TEXT,
+        mention_key TEXT,
         attachment_category TEXT,
         attachment_date_added TEXT,
         event_datetime_raw TEXT
@@ -41,8 +45,12 @@ def get_db_conn():
     _ensure_column(conn, "agendas", "source_name", "TEXT")
     _ensure_column(conn, "agendas", "government_type", "TEXT")
     _ensure_column(conn, "agendas", "entity", "TEXT")
+    _ensure_column(conn, "agendas", "entity_id", "TEXT")
     _ensure_column(conn, "agendas", "public_body", "TEXT")
     _ensure_column(conn, "agendas", "public_body_id", "TEXT")
+    _ensure_column(conn, "agendas", "county", "TEXT")
+    _ensure_column(conn, "agendas", "route_key", "TEXT")
+    _ensure_column(conn, "agendas", "mention_key", "TEXT")
     _ensure_column(conn, "agendas", "attachment_category", "TEXT")
     _ensure_column(conn, "agendas", "attachment_date_added", "TEXT")
     _ensure_column(conn, "agendas", "event_datetime_raw", "TEXT")
@@ -64,11 +72,12 @@ def log_pdf(conn, city, feed_name, title, pdf_url, local_path, metadata=None):
         INSERT OR IGNORE INTO agendas
         (
             city, feed_name, meeting_title, meeting_date, pdf_url, local_path, downloaded_at,
-            notice_id, notice_url, source_name, government_type, entity, public_body, public_body_id,
+            notice_id, notice_url, source_name, government_type, entity, entity_id, public_body, public_body_id,
+            county, route_key, mention_key,
             attachment_category, attachment_date_added, event_datetime_raw,
             notice_tags, description_agenda, attachment_count, attachment_urls
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             city,
             feed_name,
@@ -82,8 +91,12 @@ def log_pdf(conn, city, feed_name, title, pdf_url, local_path, metadata=None):
             metadata.get("source_name"),
             metadata.get("government_type"),
             metadata.get("entity"),
+            metadata.get("entity_id"),
             metadata.get("public_body"),
             metadata.get("public_body_id"),
+            metadata.get("county"),
+            metadata.get("route_key"),
+            metadata.get("mention_key"),
             metadata.get("attachment_category"),
             metadata.get("attachment_date_added"),
             metadata.get("event_datetime_raw"),

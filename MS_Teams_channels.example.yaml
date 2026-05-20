@@ -1,0 +1,24 @@
+default_channel: others
+
+channels:
+  others:
+    display_name: Others
+    active: true
+    webhook_env: OTHERS_CHANNEL_WEBHOOK
+
+  salt_lake:
+    display_name: Salt Lake
+    active: true
+    webhook_env: SALT_LAKE_CHANNEL_WEBHOOK
+
+  utah:
+    display_name: Utah
+    active: true
+    webhook_env: UTAH_CHANNEL_WEBHOOK
+
+mention_groups:
+  salt_lake_city:
+    mode: users
+    users:
+      - name: Example User
+        upn: user@example.com

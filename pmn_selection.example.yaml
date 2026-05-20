@@ -1,0 +1,26 @@
+# Canonical PMN selection manifest example.
+# Copy to pmn_selection.yaml, edit, then regenerate pmn_sources.yaml.
+entities:
+  - government_type: municipality
+    entity: Eagle Mountain
+    entity_id: "116"
+    county: Utah
+    route_key: utah
+    public_bodies:
+      - public_body: City Council
+        public_body_id: "535"
+      - public_body: Planning Commission
+        public_body_id: "536"
+
+  - government_type: municipality
+    entity: Salt Lake City
+    entity_id: "259"
+    county: Salt Lake
+    route_key: salt_lake
+    mention_key: salt_lake_city
+    public_bodies:
+      - public_body: Salt Lake City Council
+        public_body_id: "1360"
+        slug: city_council
+      - public_body: Planning Commission
+        public_body_id: "1274"

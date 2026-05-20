@@ -1,144 +1,106 @@
 # Utah PMN Agenda Downloader
 
-This project scrapes Utah Public Meeting Notice (PMN) public body notices, stores notice-level records in SQLite, summarizes unsummarized items with OpenAI, and sends notifications (Teams/Discord).
+This project scrapes Utah Public Meeting Notice (PMN) public body notices, stores notice-level records in SQLite, summarizes unsummarized items with OpenAI, and sends notifications to Teams or Discord.
 
-## Features
-- PMN notice-level scraping with one DB record per notice.
-- Attachment-aware ingestion:
-  - no attachments -> stores `Description/Agenda` as local text document
-  - one or more attachments -> chooses a primary document for summarization
-- Enriched PMN metadata in SQLite (`notice_id`, notice types/tags, event datetime, attachment metadata).
-- LLM summarization with configurable prompt template.
-- Teams and Discord notification support.
+## What it does
+- Scrapes one PMN public body feed per configured source.
+- Stores one SQLite row per notice with PMN metadata, including `entity`, `entity_id`, `public_body`, `public_body_id`, `county`, `route_key`, `mention_key`, and event date/time fields.
+- Downloads the best attachment when present, or stores the PMN `Description/Agenda` text when no attachment exists.
+- Generates Markdown summaries.
+- Routes Teams notifications by channel/group with fallback to a catch-all channel.
 
-## What this repo uses
-- Downloader entrypoint: `app/agenda_downloader.py`
-- Scraper: `app/scrapers/utah_pmn.py`
-- Summarizer entrypoint: `app/run_summarizer.py`
-- DB (default): `/data/utah_pmn.db`
-- PMN config template: `pmn_sources.example.yaml`
+## Config files
+- Local-only config files:
+  - `pmn_selection.yaml`
+  - `pmn_sources.yaml`
+  - `MS_Teams_channels.yaml`
+- Tracked examples:
+  - `pmn_selection.example.yaml`
+  - `pmn_sources.example.yaml`
+  - `MS_Teams_channels.example.yaml`
 
-## Quick start (Docker)
-1. Copy env template:
+The real YAML files are intentionally ignored by git. Copy the examples first:
+
 ```bash
+cp pmn_selection.example.yaml pmn_selection.yaml
+cp MS_Teams_channels.example.yaml MS_Teams_channels.yaml
 cp .env.example .env
 ```
-2. Set at least:
-- `OPENAI_API_KEY`
-- `MS_TEAMS_WEBHOOK` (or `MS_TEAMS_WEBHOOK_URL`) if using Teams notifications
-3. Edit `pmn_sources.example.yaml` with your PMN public body sources.
-4. Run downloader:
+
+## PMN selection workflow
+`pmn_selection.yaml` is the human-edited manifest. It groups multiple public bodies under one entity and assigns each entity to a Teams routing group.
+
+Regenerate `pmn_sources.yaml` after editing `pmn_selection.yaml`:
+
+```bash
+docker compose run --rm -v "$PWD":/workspace -w /workspace agenda_downloader \
+  python app/generate_pmn_sources.py \
+  --selection pmn_selection.yaml \
+  --channels MS_Teams_channels.yaml \
+  --catalog "data/previous work/all_bodies.json" \
+  --out pmn_sources.yaml
+```
+
+The generator validates:
+- `entity_id`
+- `public_body_id`
+- duplicate generated source names
+- duplicate curated `public_body_id` values
+- unknown `route_key` values
+- mismatches against the saved PMN catalog snapshot
+
+## Teams routing
+`MS_Teams_channels.yaml` defines:
+- `default_channel`
+- `channels.<route_key>.display_name`
+- `channels.<route_key>.active`
+- `channels.<route_key>.webhook_env`
+- optional `mention_groups.<mention_key>`
+
+Routing behavior:
+- If the configured `route_key` is active and its webhook env var is set, the summary goes there.
+- If the route is missing, inactive, or missing a webhook, the summary goes to the default catch-all channel.
+- If `TEAMS_CHANNELS_CONFIG_PATH` is unset, the app falls back to the legacy single-webhook behavior using `MS_TEAMS_WEBHOOK` or `MS_TEAMS_WEBHOOK_URL`.
+
+Mention behavior:
+- v1 supports optional Teams user mentions from `mention_groups`.
+- v1 does not implement Teams tag mentions through Incoming Webhooks.
+
+## Event dates in summaries
+Teams cards and summary Markdown now include the actual PMN notice/event date fields from the notice metadata:
+- `Meeting Date` uses the normalized PMN event date when available.
+- `Event Date/Time` includes the raw PMN event datetime string when available.
+- `Summarized` remains separate from the actual notice/event date.
+
+## Runtime
+Default runtime paths:
+- `PMN_CONFIG_PATH=/app/pmn_sources.yaml`
+- `TEAMS_CHANNELS_CONFIG_PATH=/app/MS_Teams_channels.yaml`
+- `DB_PATH=/data/utah_pmn.db`
+- `PROMPT_TEMPLATE_PATH=/app/prompt_template.default.txt`
+
+Run the pipeline:
+
 ```bash
 docker compose run --rm agenda_downloader
-```
-5. Run summarizer:
-```bash
 docker compose run --rm agenda_summarizer
 ```
 
-## Usage examples
-Run full pipeline manually:
+Or use the helper script:
+
 ```bash
-docker compose run --rm agenda_downloader
-docker compose run --rm agenda_summarizer
+./agenda_pipeline.sh
 ```
 
-Check recent DB rows:
+## Verification
+Run unit tests:
+
 ```bash
-docker compose run --rm agenda_downloader python - <<'PY'
-import sqlite3
-conn = sqlite3.connect('/data/utah_pmn.db')
-for row in conn.execute("select id, city, feed_name, meeting_title from agendas order by id desc limit 10"):
-    print(row)
-conn.close()
-PY
+docker compose run --rm -v "$PWD":/workspace -w /workspace agenda_downloader \
+  python -m unittest discover -s tests
 ```
-
-## Prompt customization
-- Default prompt file is tracked at `prompt_template.default.txt`.
-- Runtime uses `PROMPT_TEMPLATE_PATH` (default `/app/prompt_template.default.txt`).
-- Local custom prompt can be created as `custom_summary_prompt.txt` (ignored by git), then point `PROMPT_TEMPLATE_PATH` to it.
-- Supported placeholders in prompt templates:
-  - `{{AGENDA_TEXT}}`
-  - `{{TITLE}}`
-
-## PMN-only repo
-- Legacy scrapers (CivicPlus/Granicus/Conway) are removed.
-- `cities.yaml` is removed.
-- Summarizer targets are derived from PMN `entity` values in `pmn_sources.example.yaml`.
-
-## DB model
-Table: `agendas` (notice-level records).
-
-Compatibility columns used by summarizer remain:
-- `city`, `feed_name`, `meeting_title`, `meeting_date`, `pdf_url`, `local_path`, `summarized`, `summary_path`, `summary_timestamp`
-
-PMN-specific columns include:
-- `notice_id`, `notice_url`, `source_name`, `government_type`, `entity`, `public_body`, `public_body_id`
-- `event_datetime_raw`, `notice_tags`, `description_agenda`
-- `attachment_count`, `attachment_urls`, `attachment_category`, `attachment_date_added`
 
 ## Notes
-- `city` maps to PMN `entity`.
+- `city` in the database maps to PMN `entity`.
 - `feed_name` maps to PMN `public_body`.
-- One DB row is written per notice.
-
-## Disclaimer
-This project is provided for informational workflow automation. Meeting data quality and completeness depend on source data published to Utah PMN and attached documents. Always verify critical details against official public records.
-# Utah PMN Agenda Downloader
-
-This project scrapes Utah Public Meeting Notice (PMN) public body notices, stores notice-level records in SQLite, summarizes unsummarized items with OpenAI, and sends notifications (Teams/Discord).
-
-## What this repo uses
-- Downloader entrypoint: `app/agenda_downloader.py`
-- Scraper: `app/scrapers/utah_pmn.py`
-- Summarizer entrypoint: `app/run_summarizer.py`
-- DB (default): `/data/utah_pmn.db`
-- PMN config template: `pmn_sources.example.yaml`
-
-## Quick start (Docker)
-1. Copy env template:
-```bash
-cp .env.example .env
-```
-2. Set at least:
-- `OPENAI_API_KEY`
-- `MS_TEAMS_WEBHOOK` (or `MS_TEAMS_WEBHOOK_URL`) if using Teams notifications
-3. Edit `pmn_sources.example.yaml` with your PMN public body sources.
-4. Run downloader:
-```bash
-docker compose run --rm agenda_downloader
-```
-5. Run summarizer:
-```bash
-docker compose run --rm agenda_summarizer
-```
-
-## Prompt customization
-- Default prompt file is tracked at `prompt_template.default.txt`.
-- Runtime uses `PROMPT_TEMPLATE_PATH` (default `/app/prompt_template.default.txt`).
-- Local custom prompt can be created as `custom_summary_prompt.txt` (ignored by git), then point `PROMPT_TEMPLATE_PATH` to it.
-- Supported placeholders in prompt templates:
-  - `{{AGENDA_TEXT}}`
-  - `{{TITLE}}`
-
-## PMN-only repo
-- Legacy scrapers (CivicPlus/Granicus/Conway) are removed.
-- `cities.yaml` is removed.
-- Summarizer targets are derived from PMN `entity` values in `pmn_sources.example.yaml`.
-
-## DB model
-Table: `agendas` (notice-level records).
-
-Compatibility columns used by summarizer remain:
-- `city`, `feed_name`, `meeting_title`, `meeting_date`, `pdf_url`, `local_path`, `summarized`, `summary_path`, `summary_timestamp`
-
-PMN-specific columns include:
-- `notice_id`, `notice_url`, `source_name`, `government_type`, `entity`, `public_body`, `public_body_id`
-- `event_datetime_raw`, `notice_tags`, `description_agenda`
-- `attachment_count`, `attachment_urls`, `attachment_category`, `attachment_date_added`
-
-## Notes
-- `city` maps to PMN `entity`.
-- `feed_name` maps to PMN `public_body`.
-- One DB row is written per notice.
+- The PMN catalog under `data/previous work/` is treated as a refreshable snapshot, not a live dependency.
