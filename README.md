@@ -100,6 +100,30 @@ docker compose run --rm -v "$PWD":/workspace -w /workspace agenda_downloader \
   python -m unittest discover -s tests
 ```
 
+## GitHub Actions Docker CI/CD
+GitHub Actions now builds and tests the Docker image automatically:
+- Pull requests to `main` run a Docker build plus the unit test suite.
+- Pushes to `main`, version tags like `v1.2.3`, and manual workflow runs publish the image to GitHub Container Registry.
+
+Published image location:
+
+```bash
+ghcr.io/<owner>/<repo>:latest
+ghcr.io/<owner>/<repo>:<branch>
+ghcr.io/<owner>/<repo>:sha-<commit>
+```
+
+For this repository, that means the default image path will be:
+
+```bash
+ghcr.io/moline-k/utah-pmn-summaries:latest
+```
+
+Notes:
+- The workflow uses the built-in `GITHUB_TOKEN`, so no separate registry password is required for publishing to `ghcr.io`.
+- If this is the first package published from the repo, GitHub may require package visibility/settings to be adjusted in the repository or package settings page.
+- To publish a release-tagged image, push a tag such as `v1.0.0`.
+
 ## Notes
 - `city` in the database maps to PMN `entity`.
 - `feed_name` maps to PMN `public_body`.
