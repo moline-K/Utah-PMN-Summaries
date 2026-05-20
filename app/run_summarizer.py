@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os, yaml, importlib
 
-PMN_CONFIG_PATH = os.getenv("PMN_CONFIG_PATH", "pmn_sources.example.yaml")
+PMN_CONFIG_PATH = os.getenv("PMN_CONFIG_PATH", "pmn_sources.yaml")
 
 
 def _load_pmn_entities(path):

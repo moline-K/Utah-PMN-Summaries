@@ -14,5 +14,7 @@ data/
 *.env
 *.code-workspace
 custom_summary_prompt.txt
+MS_Teams_channels.yaml
+pmn_selection.yaml
 pmn_sources.yaml
 PQ_Scripts.pq

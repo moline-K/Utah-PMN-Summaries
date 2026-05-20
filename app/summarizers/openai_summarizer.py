@@ -1,4 +1,6 @@
-import os, fitz, requests
+import os
+
+import fitz
 from openai import OpenAI
 from .base_summarizer import BaseSummarizer
 from notifiers.discord_notify import send_discord_message
@@ -72,11 +74,11 @@ class OpenaiSummarizer(BaseSummarizer):
         )
         return response.choices[0].message.content.strip()
 
-    def notify(self, title, city, feed, doc_type, pdf_url, summary_path):
+    def notify(self, notice, doc_type, summary_path, summarized_at):
         excerpt = self._read_summary_excerpt(summary_path)
         #self._notify_n8n(title, excerpt)
-        self._notify_discord(title, city, feed, doc_type, pdf_url, excerpt)
-        self._notify_teams(title, city, feed, doc_type, pdf_url, excerpt)
+        self._notify_discord(notice, doc_type, excerpt)
+        self._notify_teams(notice, doc_type, excerpt, summarized_at)
 
     def _read_summary_excerpt(self, summary_path, limit=1500):
         try:
@@ -129,43 +131,56 @@ class OpenaiSummarizer(BaseSummarizer):
     #    except Exception as e:
     #        print(f"[WARN] webhook failed: {e}")
 
-    def _notify_discord(self, title, city, feed, doc_type, pdf_url, excerpt):
+    def _notify_discord(self, notice, doc_type, excerpt):
         print(f"[DEBUG] _notify_discord called")
         print(f"[DEBUG] self.discord_webhook = {self.discord_webhook}")
         if not self.discord_webhook:
             print("[DEBUG] No Discord webhook configured")
             return
         print("[DEBUG] Building message...")
-        heading = f"**{city} - {feed} ({doc_type})**"
+        heading = f"**{notice['city']} - {notice['feed_name']} ({doc_type})**"
         body_lines = [heading]
-        if title:
-            body_lines.append(f"*{title}*")
+        if notice.get("meeting_title"):
+            body_lines.append(f"*{notice['meeting_title']}*")
+        if notice.get("meeting_date"):
+            body_lines.append(f"Meeting Date: {notice['meeting_date']}")
+        elif notice.get("event_datetime_raw"):
+            body_lines.append(f"Event Date/Time: {notice['event_datetime_raw']}")
         if excerpt:
             body_lines.append("")
             body_lines.append(excerpt)
         body_lines.append("")
-        body_lines.append(f"Original PDF: {pdf_url}")
+        body_lines.append(f"Original PDF: {notice['pdf_url']}")
         content = "\n".join(body_lines)
         if len(content) > 1900:
             content = content[:1900] + "..."
         send_discord_message(self.discord_webhook, content)
 
-    def _notify_teams(self, title, city, feed, doc_type, pdf_url, excerpt):
+    def _notify_teams(self, notice, doc_type, excerpt, summarized_at):
         print(f"[DEBUG] _notify_teams called")
         print(f"[DEBUG] self.teams_webhook = {self.teams_webhook}")
-        heading = f"{city} - {feed} ({doc_type})"
-        body_lines = [heading]
-        if title:
-            body_lines.append(title)
-        if excerpt:
-            body_lines.append("")
-            body_lines.append(excerpt)
-        body_lines.append("")
-        body_lines.append(f"Original PDF: {pdf_url}")
-        content = "\n".join(body_lines)
-        if len(content) > 3500:
-            content = content[:3500] + "..."
-        send_ms_teams_message(content, webhook_url=self.teams_webhook)
+        payload = {
+            "title": notice.get("meeting_title") or f"{notice['city']} - {notice['feed_name']}",
+            "city": notice.get("city"),
+            "feed": notice.get("feed_name"),
+            "doc_type": doc_type,
+            "source_url": notice.get("pdf_url"),
+            "summary_excerpt": excerpt,
+            "meeting_date": notice.get("meeting_date"),
+            "event_datetime_raw": notice.get("event_datetime_raw"),
+            "summarized_at": summarized_at.isoformat(timespec="minutes"),
+            "entity": notice.get("entity"),
+            "entity_id": notice.get("entity_id"),
+            "public_body": notice.get("public_body"),
+            "public_body_id": notice.get("public_body_id"),
+            "county": notice.get("county"),
+            "route_key": notice.get("route_key"),
+            "mention_key": notice.get("mention_key"),
+            "notice_id": notice.get("notice_id"),
+            "notice_url": notice.get("notice_url"),
+            "notice_tags": notice.get("notice_tags"),
+        }
+        send_ms_teams_message(payload, webhook_url=self.teams_webhook)
 
     def _load_prompt_template(self):
         path = os.getenv("PROMPT_TEMPLATE_PATH")
