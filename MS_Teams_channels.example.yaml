@@ -22,3 +22,9 @@ mention_groups:
     users:
       - name: Example User
         upn: user@example.com
+
+tag_groups:
+  salt_lake_city:
+    name: Salt Lake City
+    team_id: fill-in-team-id
+    tag_id: fill-in-tag-id

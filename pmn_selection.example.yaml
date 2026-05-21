@@ -18,6 +18,7 @@ entities:
     county: Salt Lake
     route_key: salt_lake
     mention_key: salt_lake_city
+    tag_key: salt_lake_city
     public_bodies:
       - public_body: Salt Lake City Council
         public_body_id: "1360"

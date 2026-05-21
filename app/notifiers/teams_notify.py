@@ -45,6 +45,7 @@ def resolve_teams_destination(notification, webhook_url=None, teams_config_path=
             "channel_display_name": None,
             "used_fallback": False,
             "mentions": [],
+            "tag": None,
         }
 
     try:
@@ -57,6 +58,7 @@ def resolve_teams_destination(notification, webhook_url=None, teams_config_path=
             "channel_display_name": None,
             "used_fallback": False,
             "mentions": [],
+            "tag": None,
         }
 
     channels = config["channels"]
@@ -79,12 +81,15 @@ def resolve_teams_destination(notification, webhook_url=None, teams_config_path=
 
     mention_groups = config.get("mention_groups", {})
     mentions = resolve_mentions(mention_groups, notification.get("mention_key"))
+    tag_groups = config.get("tag_groups", {})
+    tag = resolve_tag(tag_groups, notification.get("tag_key"))
     return {
         "webhook_url": resolved_webhook,
         "channel_key": channel_key,
         "channel_display_name": route_channel.get("display_name"),
         "used_fallback": used_fallback,
         "mentions": mentions,
+        "tag": tag,
     }
 
 
@@ -118,11 +123,15 @@ def load_teams_channels_config(path):
     mention_groups = config.get("mention_groups") or {}
     if not isinstance(mention_groups, dict):
         raise ValueError("mention_groups must be a mapping")
+    tag_groups = config.get("tag_groups") or {}
+    if not isinstance(tag_groups, dict):
+        raise ValueError("tag_groups must be a mapping")
 
     return {
         "default_channel": default_key,
         "channels": normalized_channels,
         "mention_groups": mention_groups,
+        "tag_groups": tag_groups,
     }
 
 
@@ -152,7 +161,9 @@ def build_adaptive_card_payload(notification, destination):
     if mention_entities:
         attachment["content"]["msteams"] = {"entities": mention_entities}
 
-    return {"type": "message", "attachments": [attachment]}
+    payload = {"type": "message", "attachments": [attachment]}
+    payload.update(build_flow_metadata(destination))
+    return payload
 
 
 def _build_card_body(notification, destination):
@@ -304,6 +315,32 @@ def resolve_mentions(mention_groups, mention_key):
     return mentions
 
 
+def resolve_tag(tag_groups, tag_key):
+    normalized_key = normalize_key(tag_key)
+    if not normalized_key:
+        return None
+
+    group = None
+    for key, value in tag_groups.items():
+        if normalize_key(key) == normalized_key:
+            group = value
+            break
+    if not isinstance(group, dict):
+        return None
+
+    tag_id = str(group.get("tag_id") or "").strip()
+    team_id = str(group.get("team_id") or "").strip()
+    if not tag_id or not team_id:
+        return None
+
+    return {
+        "key": normalized_key,
+        "id": tag_id,
+        "team_id": team_id,
+        "name": str(group.get("name") or tag_key or "").strip() or normalized_key,
+    }
+
+
 def build_mention_block(mentions):
     if not mentions:
         return None
@@ -313,6 +350,18 @@ def build_mention_block(mentions):
         "text": joined,
         "wrap": True,
         "spacing": "Small",
+    }
+
+
+def build_flow_metadata(destination):
+    tag = destination.get("tag")
+    if not tag:
+        return {}
+    return {
+        "tagId": tag["id"],
+        "teamId": tag["team_id"],
+        "tagName": tag["name"],
+        "tagKey": tag["key"],
     }
 
 

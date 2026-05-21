@@ -28,6 +28,13 @@ def write_channels_config(path):
                 ],
             }
         },
+        "tag_groups": {
+            "city_watchers": {
+                "name": "City Watchers",
+                "team_id": "team-123",
+                "tag_id": "tag-456",
+            }
+        },
     }
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
@@ -47,6 +54,7 @@ class TeamsNotifyTests(unittest.TestCase):
             "source_url": "https://example.test/source.pdf",
             "summary_excerpt": "## Key Engineering Actions\n- Replace water line\n",
             "route_key": "utah",
+            "tag_key": "city_watchers",
         }
 
     def tearDown(self):
@@ -91,7 +99,7 @@ class TeamsNotifyTests(unittest.TestCase):
         self.assertEqual("https://others.test", destination["webhook_url"])
         self.assertTrue(destination["used_fallback"])
 
-    def test_payload_includes_meeting_date_and_mentions(self):
+    def test_payload_includes_meeting_date_mentions_and_tag_metadata(self):
         destination = teams_notify.resolve_teams_destination(
             {**self.base_notification, "mention_key": "city_watchers"},
             teams_config_path=str(self.config_path),
@@ -112,6 +120,10 @@ class TeamsNotifyTests(unittest.TestCase):
         self.assertEqual("2026-05-19", facts["Meeting Date:"])
         self.assertEqual("Tuesday, May 19, 2026 6:00 PM", facts["Event Date/Time:"])
         self.assertIn("msteams", payload["attachments"][0]["content"])
+        self.assertEqual("tag-456", payload["tagId"])
+        self.assertEqual("team-123", payload["teamId"])
+        self.assertEqual("City Watchers", payload["tagName"])
+        self.assertEqual("city_watchers", payload["tagKey"])
         self.assertEqual(
             "alice@example.com",
             payload["attachments"][0]["content"]["msteams"]["entities"][0]["mentioned"]["id"],
@@ -130,6 +142,7 @@ class TeamsNotifyTests(unittest.TestCase):
         payload = teams_notify.build_adaptive_card_payload(self.base_notification, destination)
 
         self.assertNotIn("msteams", payload["attachments"][0]["content"])
+        self.assertEqual("tag-456", payload["tagId"])
         self.assertEqual("Open Source", payload["attachments"][0]["content"]["actions"][0]["title"])
 
     def test_send_ms_teams_message_routes_end_to_end(self):

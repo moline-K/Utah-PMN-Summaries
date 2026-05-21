@@ -4,7 +4,7 @@ This project scrapes Utah Public Meeting Notice (PMN) public body notices, store
 
 ## What it does
 - Scrapes one PMN public body feed per configured source.
-- Stores one SQLite row per notice with PMN metadata, including `entity`, `entity_id`, `public_body`, `public_body_id`, `county`, `route_key`, `mention_key`, and event date/time fields.
+- Stores one SQLite row per notice with PMN metadata, including `entity`, `entity_id`, `public_body`, `public_body_id`, `county`, `route_key`, `mention_key`, `tag_key`, and event date/time fields.
 - Downloads the best attachment when present, or stores the PMN `Description/Agenda` text when no attachment exists.
 - Generates Markdown summaries.
 - Routes Teams notifications by channel/group with fallback to a catch-all channel.
@@ -33,13 +33,27 @@ cp .env.example .env
 Regenerate `pmn_sources.yaml` after editing `pmn_selection.yaml`:
 
 ```bash
-docker compose run --rm -v "$PWD":/workspace -w /workspace agenda_downloader \
-  python app/generate_pmn_sources.py \
+docker compose run --rm pmn_generator \
   --selection pmn_selection.yaml \
   --channels MS_Teams_channels.yaml \
   --catalog "data/previous work/all_bodies.json" \
   --out pmn_sources.yaml
 ```
+
+Do not run the generator through `agenda_downloader`. That service bind-mounts `./pmn_sources.yaml` into `/app/pmn_sources.yaml` for runtime, so if the host file does not exist Docker can create a directory named `pmn_sources.yaml` instead of the YAML file you want.
+
+If that already happened, remove the mistaken directory on the host and rerun the generator:
+
+```bash
+rmdir pmn_sources.yaml
+docker compose run --rm pmn_generator \
+  --selection pmn_selection.yaml \
+  --channels MS_Teams_channels.yaml \
+  --catalog "data/previous work/all_bodies.json" \
+  --out pmn_sources.yaml
+```
+
+If the directory is not empty, inspect it first and remove it deliberately before rerunning the generator.
 
 The generator validates:
 - `entity_id`
@@ -56,6 +70,7 @@ The generator validates:
 - `channels.<route_key>.active`
 - `channels.<route_key>.webhook_env`
 - optional `mention_groups.<mention_key>`
+- optional `tag_groups.<tag_key>`
 
 Routing behavior:
 - If the configured `route_key` is active and its webhook env var is set, the summary goes there.
@@ -65,6 +80,7 @@ Routing behavior:
 Mention behavior:
 - v1 supports optional Teams user mentions from `mention_groups`.
 - v1 does not implement Teams tag mentions through Incoming Webhooks.
+- v1 can attach `tagId`, `teamId`, `tagName`, and `tagKey` as top-level payload metadata so a Power Automate flow can turn a configured `tag_key` into a Teams tag mention token.
 
 ## Event dates in summaries
 Teams cards and summary Markdown now include the actual PMN notice/event date fields from the notice metadata:

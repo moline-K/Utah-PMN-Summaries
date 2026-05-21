@@ -67,6 +67,14 @@ def load_channel_keys(path: str) -> set[str]:
     return {slugify(str(key)) for key in channels.keys()}
 
 
+def load_tag_keys(path: str) -> set[str]:
+    config = load_yaml(path)
+    tag_groups = config.get("tag_groups") or {}
+    if not isinstance(tag_groups, dict):
+        raise ValueError(f"{path} must define tag_groups as a mapping")
+    return {slugify(str(key)) for key in tag_groups.keys()}
+
+
 def derive_public_body_slug(entity_slug: str, public_body: str) -> str:
     public_body_slug = slugify(public_body)
     prefix = entity_slug + "_"
@@ -79,6 +87,7 @@ def build_sources(
     selection: Dict[str, Any],
     catalog: Dict[Tuple[str, str], Dict[str, str]],
     channel_keys: set[str],
+    tag_keys: set[str],
     base_url: str,
     storage_root: str,
 ) -> List[Dict[str, str]]:
@@ -101,9 +110,13 @@ def build_sources(
         route_key = slugify(normalize_scalar(entity_entry.get("route_key"), "route_key"))
         mention_key = entity_entry.get("mention_key")
         mention_key = slugify(str(mention_key)) if mention_key is not None and str(mention_key).strip() else None
+        tag_key = entity_entry.get("tag_key")
+        tag_key = slugify(str(tag_key)) if tag_key is not None and str(tag_key).strip() else None
 
         if route_key not in channel_keys:
             raise ValueError(f"Unknown route_key '{route_key}' for entity '{entity_name}'")
+        if tag_key and tag_key not in tag_keys:
+            raise ValueError(f"Unknown tag_key '{tag_key}' for entity '{entity_name}'")
 
         public_bodies = entity_entry.get("public_bodies", [])
         if not isinstance(public_bodies, list) or not public_bodies:
@@ -172,6 +185,8 @@ def build_sources(
             }
             if mention_key:
                 source["mention_key"] = mention_key
+            if tag_key:
+                source["tag_key"] = tag_key
             sources.append(source)
 
     sources.sort(key=lambda item: (item["entity"], item["public_body"]))
@@ -204,7 +219,8 @@ def main() -> int:
     selection = load_yaml(args.selection)
     catalog = load_catalog(args.catalog)
     channel_keys = load_channel_keys(args.channels)
-    sources = build_sources(selection, catalog, channel_keys, args.base_url, args.storage_root)
+    tag_keys = load_tag_keys(args.channels)
+    sources = build_sources(selection, catalog, channel_keys, tag_keys, args.base_url, args.storage_root)
     write_yaml(args.out, sources)
     print(f"Wrote {len(sources)} sources to {args.out}")
     return 0

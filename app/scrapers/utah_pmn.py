@@ -100,6 +100,7 @@ def scrape_feed(feed_url, base_url, city, feed_name, known_notice_ids=None, stor
                 "county": source_meta.get("county"),
                 "route_key": source_meta.get("route_key"),
                 "mention_key": source_meta.get("mention_key"),
+                "tag_key": source_meta.get("tag_key"),
                 "attachment_category": attachment_category,
                 "attachment_date_added": attachment_date_added,
                 "event_datetime_raw": metadata.get("event_start") or notice.get("event_datetime_raw"),

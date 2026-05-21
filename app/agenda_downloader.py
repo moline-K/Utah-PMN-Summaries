@@ -32,6 +32,7 @@ def get_db_conn():
         county TEXT,
         route_key TEXT,
         mention_key TEXT,
+        tag_key TEXT,
         attachment_category TEXT,
         attachment_date_added TEXT,
         event_datetime_raw TEXT
@@ -51,6 +52,7 @@ def get_db_conn():
     _ensure_column(conn, "agendas", "county", "TEXT")
     _ensure_column(conn, "agendas", "route_key", "TEXT")
     _ensure_column(conn, "agendas", "mention_key", "TEXT")
+    _ensure_column(conn, "agendas", "tag_key", "TEXT")
     _ensure_column(conn, "agendas", "attachment_category", "TEXT")
     _ensure_column(conn, "agendas", "attachment_date_added", "TEXT")
     _ensure_column(conn, "agendas", "event_datetime_raw", "TEXT")
@@ -73,11 +75,11 @@ def log_pdf(conn, city, feed_name, title, pdf_url, local_path, metadata=None):
         (
             city, feed_name, meeting_title, meeting_date, pdf_url, local_path, downloaded_at,
             notice_id, notice_url, source_name, government_type, entity, entity_id, public_body, public_body_id,
-            county, route_key, mention_key,
+            county, route_key, mention_key, tag_key,
             attachment_category, attachment_date_added, event_datetime_raw,
             notice_tags, description_agenda, attachment_count, attachment_urls
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             city,
             feed_name,
@@ -97,6 +99,7 @@ def log_pdf(conn, city, feed_name, title, pdf_url, local_path, metadata=None):
             metadata.get("county"),
             metadata.get("route_key"),
             metadata.get("mention_key"),
+            metadata.get("tag_key"),
             metadata.get("attachment_category"),
             metadata.get("attachment_date_added"),
             metadata.get("event_datetime_raw"),

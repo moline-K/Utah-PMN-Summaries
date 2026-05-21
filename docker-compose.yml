@@ -1,5 +1,12 @@
 name: agenda_downloader
 services:
+  pmn_generator:
+    build: .
+    working_dir: /workspace
+    entrypoint: ["python", "app/generate_pmn_sources.py"]
+    volumes:
+      - .:/workspace
+
   agenda_downloader:
     build: .
     command: python /app/agenda_downloader.py
@@ -10,7 +17,12 @@ services:
       - DB_PATH=${DB_PATH:-/data/utah_pmn.db}
     volumes:
       - ./data:/data
-      - ./pmn_sources.yaml:/app/pmn_sources.yaml:ro
+      - type: bind
+        source: ./pmn_sources.yaml
+        target: /app/pmn_sources.yaml
+        read_only: true
+        bind:
+          create_host_path: false
     restart: unless-stopped
 
   agenda_summarizer:
@@ -26,6 +38,16 @@ services:
       - PROMPT_TEMPLATE_PATH=${PROMPT_TEMPLATE_PATH:-/app/prompt_template.default.txt}
     volumes:
       - ./data:/data
-      - ./pmn_sources.yaml:/app/pmn_sources.yaml:ro
-      - ./MS_Teams_channels.yaml:/app/MS_Teams_channels.yaml:ro
+      - type: bind
+        source: ./pmn_sources.yaml
+        target: /app/pmn_sources.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./MS_Teams_channels.yaml
+        target: /app/MS_Teams_channels.yaml
+        read_only: true
+        bind:
+          create_host_path: false
     restart: unless-stopped

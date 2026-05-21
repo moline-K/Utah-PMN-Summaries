@@ -75,6 +75,7 @@ class BaseSummarizer:
                 county,
                 route_key,
                 mention_key,
+                tag_key,
                 event_datetime_raw,
                 notice_tags,
                 description_agenda,

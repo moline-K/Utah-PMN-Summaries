@@ -176,6 +176,7 @@ class OpenaiSummarizer(BaseSummarizer):
             "county": notice.get("county"),
             "route_key": notice.get("route_key"),
             "mention_key": notice.get("mention_key"),
+            "tag_key": notice.get("tag_key"),
             "notice_id": notice.get("notice_id"),
             "notice_url": notice.get("notice_url"),
             "notice_tags": notice.get("notice_tags"),
