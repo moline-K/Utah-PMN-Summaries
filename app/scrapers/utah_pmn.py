@@ -98,6 +98,8 @@ def scrape_feed(feed_url, base_url, city, feed_name, known_notice_ids=None, stor
                 "public_body": source_meta.get("public_body", feed_name),
                 "public_body_id": str(source_meta.get("public_body_id") or ""),
                 "county": source_meta.get("county"),
+                "channel_name": source_meta.get("channel_name"),
+                "tag_name": source_meta.get("tag_name"),
                 "route_key": source_meta.get("route_key"),
                 "mention_key": source_meta.get("mention_key"),
                 "tag_key": source_meta.get("tag_key"),

@@ -73,6 +73,8 @@ class BaseSummarizer:
                 public_body,
                 public_body_id,
                 county,
+                channel_name,
+                tag_name,
                 route_key,
                 mention_key,
                 tag_key,

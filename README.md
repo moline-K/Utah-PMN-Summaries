@@ -4,40 +4,54 @@ This project scrapes Utah Public Meeting Notice (PMN) public body notices, store
 
 ## What it does
 - Scrapes one PMN public body feed per configured source.
-- Stores one SQLite row per notice with PMN metadata, including `entity`, `entity_id`, `public_body`, `public_body_id`, `county`, `route_key`, `mention_key`, `tag_key`, and event date/time fields.
+- Stores one SQLite row per notice with PMN metadata, including `entity`, `entity_id`, `public_body`, `public_body_id`, `channel_name`, `tag_name`, and event date/time fields.
 - Downloads the best attachment when present, or stores the PMN `Description/Agenda` text when no attachment exists.
 - Generates Markdown summaries.
-- Routes Teams notifications by channel/group with fallback to a catch-all channel.
+- Sends Teams notifications through one Power Automate flow webhook.
 
 ## Config files
 - Local-only config files:
   - `pmn_selection.yaml`
   - `pmn_sources.yaml`
-  - `MS_Teams_channels.yaml`
 - Tracked examples:
   - `pmn_selection.example.yaml`
   - `pmn_sources.example.yaml`
-  - `MS_Teams_channels.example.yaml`
 
 The real YAML files are intentionally ignored by git. Copy the examples first:
 
 ```bash
 cp pmn_selection.example.yaml pmn_selection.yaml
-cp MS_Teams_channels.example.yaml MS_Teams_channels.yaml
 cp .env.example .env
 ```
 
 ## PMN selection workflow
-`pmn_selection.yaml` is the human-edited manifest. It groups multiple public bodies under one entity and assigns each entity to a Teams routing group.
+`pmn_selection.yaml` is the human-edited manifest. It groups multiple public bodies under one entity and assigns each entity to a Teams `channel_name`.
 
 Regenerate `pmn_sources.yaml` after editing `pmn_selection.yaml`:
 
 ```bash
 docker compose run --rm pmn_generator \
   --selection pmn_selection.yaml \
-  --channels MS_Teams_channels.yaml \
   --catalog "data/previous work/all_bodies.json" \
   --out pmn_sources.yaml
+```
+
+Or use the wrapper script:
+
+```bash
+./regenerate_pmn_sources.sh
+```
+
+The wrapper tries, in order:
+
+1. local `python3` with `PyYAML`
+2. `docker compose` using the local `pmn_generator` service
+3. a plain Docker image fallback
+
+You can override the Docker image used by the fallback:
+
+```bash
+PMN_GENERATOR_IMAGE=ghcr.io/moline-k/utah-pmn-summaries:latest ./regenerate_pmn_sources.sh
 ```
 
 Do not run the generator through `agenda_downloader`. That service bind-mounts `./pmn_sources.yaml` into `/app/pmn_sources.yaml` for runtime, so if the host file does not exist Docker can create a directory named `pmn_sources.yaml` instead of the YAML file you want.
@@ -48,7 +62,6 @@ If that already happened, remove the mistaken directory on the host and rerun th
 rmdir pmn_sources.yaml
 docker compose run --rm pmn_generator \
   --selection pmn_selection.yaml \
-  --channels MS_Teams_channels.yaml \
   --catalog "data/previous work/all_bodies.json" \
   --out pmn_sources.yaml
 ```
@@ -60,27 +73,17 @@ The generator validates:
 - `public_body_id`
 - duplicate generated source names
 - duplicate curated `public_body_id` values
-- unknown `route_key` values
 - mismatches against the saved PMN catalog snapshot
 
 ## Teams routing
-`MS_Teams_channels.yaml` defines:
-- `default_channel`
-- `channels.<route_key>.display_name`
-- `channels.<route_key>.active`
-- `channels.<route_key>.webhook_env`
-- optional `mention_groups.<mention_key>`
-- optional `tag_groups.<tag_key>`
-
 Routing behavior:
-- If the configured `route_key` is active and its webhook env var is set, the summary goes there.
-- If the route is missing, inactive, or missing a webhook, the summary goes to the default catch-all channel.
-- If `TEAMS_CHANNELS_CONFIG_PATH` is unset, the app falls back to the legacy single-webhook behavior using `MS_TEAMS_WEBHOOK` or `MS_TEAMS_WEBHOOK_URL`.
+- `channel_name` from `pmn_sources.yaml` is sent directly to Power Automate.
+- `tag_name` is sent directly when present.
+- If `tag_name` is omitted, the notifier falls back to `entity` as the Teams tag display name.
+- The Power Automate flow resolves channel and tag display names and fails the run if a name does not match exactly once.
 
-Mention behavior:
-- v1 supports optional Teams user mentions from `mention_groups`.
-- v1 does not implement Teams tag mentions through Incoming Webhooks.
-- v1 can attach `tagId`, `teamId`, `tagName`, and `tagKey` as top-level payload metadata so a Power Automate flow can turn a configured `tag_key` into a Teams tag mention token.
+Required Teams environment:
+- `TEAMS_FLOW_WEBHOOK_URL` or `TEAMS_FLOW_WEBHOOK`
 
 ## Event dates in summaries
 Teams cards and summary Markdown now include the actual PMN notice/event date fields from the notice metadata:
@@ -91,7 +94,6 @@ Teams cards and summary Markdown now include the actual PMN notice/event date fi
 ## Runtime
 Default runtime paths:
 - `PMN_CONFIG_PATH=/app/pmn_sources.yaml`
-- `TEAMS_CHANNELS_CONFIG_PATH=/app/MS_Teams_channels.yaml`
 - `DB_PATH=/data/utah_pmn.db`
 - `PROMPT_TEMPLATE_PATH=/app/prompt_template.default.txt`
 

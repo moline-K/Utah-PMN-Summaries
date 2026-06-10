@@ -33,7 +33,12 @@ def main():
     class_name = "".join([p.capitalize() for p in summarizer_name.split("_")])[:-1] + "r"
     SummarizerClass = getattr(module, class_name)
     discord_webhook = os.getenv("DISCORD_WEBHOOK") or os.getenv("DISCORD_WEBHOOK_URL")
-    teams_webhook = os.getenv("MS_TEAMS_WEBHOOK_URL") or os.getenv("MS_TEAMS_WEBHOOK")
+    teams_webhook = (
+        os.getenv("TEAMS_FLOW_WEBHOOK_URL")
+        or os.getenv("TEAMS_FLOW_WEBHOOK")
+        or os.getenv("MS_TEAMS_WEBHOOK_URL")
+        or os.getenv("MS_TEAMS_WEBHOOK")
+    )
     summarizer = SummarizerClass(discord_webhook=discord_webhook, teams_webhook=teams_webhook)
 
     for city in targets:

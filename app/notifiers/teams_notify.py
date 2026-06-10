@@ -22,7 +22,7 @@ def send_ms_teams_message(notification, webhook_url=None, teams_config_path=None
         environ=environ,
     )
     url = destination.get("webhook_url")
-    if not url:
+    if not url or not destination.get("channel_display_name"):
         return destination
 
     payload = build_adaptive_card_payload(notification, destination)
@@ -38,14 +38,22 @@ def send_ms_teams_message(notification, webhook_url=None, teams_config_path=None
 def resolve_teams_destination(notification, webhook_url=None, teams_config_path=None, environ=None):
     environ = environ or os.environ
     teams_config_path = teams_config_path or environ.get("TEAMS_CHANNELS_CONFIG_PATH")
+    fallback_webhook = (
+        webhook_url
+        or environ.get("TEAMS_FLOW_WEBHOOK_URL")
+        or environ.get("TEAMS_FLOW_WEBHOOK")
+        or environ.get("MS_TEAMS_WEBHOOK_URL")
+        or environ.get("MS_TEAMS_WEBHOOK")
+    )
+    direct_channel_name = str(notification.get("channel_name") or "").strip()
     if not teams_config_path:
+        direct_channel_key = normalize_key(direct_channel_name) or None
         return {
-            "webhook_url": webhook_url or environ.get("MS_TEAMS_WEBHOOK_URL") or environ.get("MS_TEAMS_WEBHOOK"),
-            "channel_key": None,
-            "channel_display_name": None,
+            "webhook_url": fallback_webhook,
+            "channel_key": direct_channel_key,
+            "channel_display_name": direct_channel_name or environ.get("TEAMS_DEFAULT_CHANNEL_NAME"),
             "used_fallback": False,
-            "mentions": [],
-            "tag": None,
+            "tag_names": coerce_tag_names(notification),
         }
 
     try:
@@ -53,43 +61,48 @@ def resolve_teams_destination(notification, webhook_url=None, teams_config_path=
     except Exception as exc:
         print(f"[WARN] Could not load Teams channels config {teams_config_path}: {exc}")
         return {
-            "webhook_url": webhook_url or environ.get("MS_TEAMS_WEBHOOK_URL") or environ.get("MS_TEAMS_WEBHOOK"),
+            "webhook_url": fallback_webhook,
             "channel_key": None,
-            "channel_display_name": None,
+            "channel_display_name": direct_channel_name or environ.get("TEAMS_DEFAULT_CHANNEL_NAME"),
             "used_fallback": False,
-            "mentions": [],
-            "tag": None,
+            "tag_names": coerce_tag_names(notification),
         }
 
     channels = config["channels"]
     default_key = config["default_channel"]
     route_key = normalize_key(notification.get("route_key"))
-    channel_key = route_key if route_key in channels else default_key
-    route_channel = channels.get(channel_key, {})
-    used_fallback = channel_key != route_key
-
-    if not channel_is_ready(route_channel, environ):
-        channel_key = default_key
-        route_channel = channels[default_key]
-        used_fallback = True
-
-    if not channel_is_ready(route_channel, environ):
-        print(f"[WARN] Default Teams channel '{default_key}' is not active or lacks a webhook")
-        resolved_webhook = None
+    if direct_channel_name:
+        channel_key = normalize_key(direct_channel_name) or None
+        channel_display_name = direct_channel_name
+        used_fallback = False
     else:
-        resolved_webhook = environ.get(route_channel["webhook_env"])
+        channel_key = route_key if route_key in channels else default_key
+        route_channel = channels.get(channel_key, {})
+        used_fallback = channel_key != route_key
 
-    mention_groups = config.get("mention_groups", {})
-    mentions = resolve_mentions(mention_groups, notification.get("mention_key"))
-    tag_groups = config.get("tag_groups", {})
-    tag = resolve_tag(tag_groups, notification.get("tag_key"))
+        if not channel_is_ready(route_channel):
+            channel_key = default_key
+            route_channel = channels[default_key]
+            used_fallback = True
+
+        if not channel_is_ready(route_channel):
+            print(f"[WARN] Default Teams channel '{default_key}' is not active")
+            channel_display_name = None
+        else:
+            channel_display_name = route_channel.get("display_name")
+
+    resolved_webhook = (
+        webhook_url
+        or _resolve_flow_webhook(config, environ)
+        or environ.get("MS_TEAMS_WEBHOOK_URL")
+        or environ.get("MS_TEAMS_WEBHOOK")
+    )
     return {
         "webhook_url": resolved_webhook,
         "channel_key": channel_key,
-        "channel_display_name": route_channel.get("display_name"),
+        "channel_display_name": channel_display_name,
         "used_fallback": used_fallback,
-        "mentions": mentions,
-        "tag": tag,
+        "tag_names": resolve_tag_names(config.get("tag_groups", {}), notification),
     }
 
 
@@ -117,39 +130,31 @@ def load_teams_channels_config(path):
         normalized_channels[normalized_key] = {
             "display_name": value.get("display_name") or str(key),
             "active": bool(value.get("active")),
-            "webhook_env": str(value.get("webhook_env") or "").strip(),
         }
 
-    mention_groups = config.get("mention_groups") or {}
-    if not isinstance(mention_groups, dict):
-        raise ValueError("mention_groups must be a mapping")
     tag_groups = config.get("tag_groups") or {}
     if not isinstance(tag_groups, dict):
         raise ValueError("tag_groups must be a mapping")
 
     return {
+        "flow_webhook_env": str(config.get("flow_webhook_env") or "").strip(),
         "default_channel": default_key,
         "channels": normalized_channels,
-        "mention_groups": mention_groups,
         "tag_groups": tag_groups,
     }
 
 
 def build_adaptive_card_payload(notification, destination):
-    body = _build_card_body(notification, destination)
-    attachment = {
-        "contentType": "application/vnd.microsoft.card.adaptive",
-        "content": {
-            "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-            "type": "AdaptiveCard",
-            "version": "1.4",
-            "body": body,
-        },
+    card = {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "body": _build_card_body(notification, destination),
     }
 
     source_url = notification.get("source_url")
     if source_url:
-        attachment["content"]["actions"] = [
+        card["actions"] = [
             {
                 "type": "Action.OpenUrl",
                 "title": "Open Source",
@@ -157,17 +162,21 @@ def build_adaptive_card_payload(notification, destination):
             }
         ]
 
-    mention_entities = build_mention_entities(destination.get("mentions", []))
-    if mention_entities:
-        attachment["content"]["msteams"] = {"entities": mention_entities}
-
-    payload = {"type": "message", "attachments": [attachment]}
-    payload.update(build_flow_metadata(destination))
-    return payload
+    delivery = {"channelName": destination.get("channel_display_name")}
+    tag_names = destination.get("tag_names", [])
+    if tag_names:
+        delivery["tagNames"] = tag_names
+    return {"card": card, "deliveries": [delivery]}
 
 
 def _build_card_body(notification, destination):
     body = [
+        {
+            "type": "TextBlock",
+            "text": "__MENTIONS__",
+            "wrap": True,
+            "spacing": "None",
+        },
         {
             "type": "TextBlock",
             "text": notification.get("title") or "Agenda Summary",
@@ -177,10 +186,6 @@ def _build_card_body(notification, destination):
         }
     ]
 
-    mention_block = build_mention_block(destination.get("mentions", []))
-    if mention_block:
-        body.append(mention_block)
-
     facts = []
     for key, value in (
         ("City", notification.get("city")),
@@ -188,7 +193,6 @@ def _build_card_body(notification, destination):
         ("Meeting Date", notification.get("meeting_date") or notification.get("event_datetime_raw")),
         ("Event Date/Time", _secondary_event_value(notification)),
         ("Summarized", notification.get("summarized_at")),
-        ("Channel", destination.get("channel_display_name")),
     ):
         if value:
             facts.append({"title": f"{key}:", "value": str(value)})
@@ -281,113 +285,74 @@ def parse_summary_sections(text):
     return sections
 
 
-def resolve_mentions(mention_groups, mention_key):
-    normalized_key = normalize_key(mention_key)
+def coerce_tag_names(notification):
+    tag_names = notification.get("tag_names")
+    if isinstance(tag_names, list):
+        values = tag_names
+    elif isinstance(tag_names, str):
+        values = [tag_names]
+    else:
+        direct_tag_name = notification.get("tag_name")
+        if isinstance(direct_tag_name, str):
+            values = [direct_tag_name]
+        else:
+            entity_name = notification.get("entity")
+            if isinstance(entity_name, str):
+                values = [entity_name]
+            else:
+                city_name = notification.get("city")
+                values = [city_name] if isinstance(city_name, str) else []
+
+    normalized = []
+    seen = set()
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(text)
+    return normalized
+
+
+def resolve_tag_names(tag_groups, notification):
+    direct = coerce_tag_names(notification)
+    if direct:
+        return direct
+
+    normalized_key = normalize_key(notification.get("tag_key"))
     if not normalized_key:
         return []
 
-    group = None
-    for key, value in mention_groups.items():
-        if normalize_key(key) == normalized_key:
-            group = value
-            break
-    if not isinstance(group, dict):
-        return []
-
-    if str(group.get("mode") or "users").strip().lower() != "users":
-        return []
-
-    mentions = []
-    for user in group.get("users", []):
-        if not isinstance(user, dict):
-            continue
-        name = str(user.get("name") or "").strip()
-        identifier = str(user.get("entra_object_id") or user.get("upn") or "").strip()
-        if not name or not identifier:
-            continue
-        mentions.append(
-            {
-                "name": name,
-                "id": identifier,
-                "text": f"<at>{name}</at>",
-            }
-        )
-    return mentions
-
-
-def resolve_tag(tag_groups, tag_key):
-    normalized_key = normalize_key(tag_key)
-    if not normalized_key:
-        return None
-
-    group = None
     for key, value in tag_groups.items():
-        if normalize_key(key) == normalized_key:
-            group = value
-            break
-    if not isinstance(group, dict):
-        return None
-
-    tag_id = str(group.get("tag_id") or "").strip()
-    team_id = str(group.get("team_id") or "").strip()
-    if not tag_id or not team_id:
-        return None
-
-    return {
-        "key": normalized_key,
-        "id": tag_id,
-        "team_id": team_id,
-        "name": str(group.get("name") or tag_key or "").strip() or normalized_key,
-    }
+        if normalize_key(key) != normalized_key:
+            continue
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        if isinstance(value, dict):
+            text = str(value.get("name") or key).strip()
+            return [text] if text else []
+        return []
+    return []
 
 
-def build_mention_block(mentions):
-    if not mentions:
-        return None
-    joined = " ".join(mention["text"] for mention in mentions)
-    return {
-        "type": "TextBlock",
-        "text": joined,
-        "wrap": True,
-        "spacing": "Small",
-    }
+def channel_is_ready(channel):
+    return bool(channel.get("active"))
 
 
-def build_flow_metadata(destination):
-    tag = destination.get("tag")
-    if not tag:
-        return {}
-    return {
-        "tagId": tag["id"],
-        "teamId": tag["team_id"],
-        "tagName": tag["name"],
-        "tagKey": tag["key"],
-    }
-
-
-def build_mention_entities(mentions):
-    entities = []
-    for mention in mentions:
-        entities.append(
-            {
-                "type": "mention",
-                "text": mention["text"],
-                "mentioned": {
-                    "id": mention["id"],
-                    "name": mention["name"],
-                },
-            }
-        )
-    return entities
-
-
-def channel_is_ready(channel, environ):
-    if not channel.get("active"):
-        return False
-    webhook_env = channel.get("webhook_env")
-    if not webhook_env:
-        return False
-    return bool(str(environ.get(webhook_env) or "").strip())
+def _resolve_flow_webhook(config, environ):
+    webhook_env = str(config.get("flow_webhook_env") or "").strip()
+    if webhook_env:
+        return str(environ.get(webhook_env) or "").strip() or None
+    return (
+        environ.get("TEAMS_FLOW_WEBHOOK_URL")
+        or environ.get("TEAMS_FLOW_WEBHOOK")
+        or environ.get("MS_TEAMS_WEBHOOK_URL")
+        or environ.get("MS_TEAMS_WEBHOOK")
+    )
 
 
 def normalize_key(value):

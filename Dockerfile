@@ -3,13 +3,11 @@ WORKDIR /app
 COPY app/ /app/
 COPY pmn_sources.example.yaml /app/pmn_sources.yaml
 COPY pmn_selection.example.yaml /app/pmn_selection.example.yaml
-COPY MS_Teams_channels.example.yaml /app/MS_Teams_channels.yaml
 COPY prompt_template.default.txt /app/
 RUN apt-get update && apt-get install -y poppler-utils && \
     pip install feedparser requests beautifulsoup4 PyMuPDF openai pyyaml
 ENV DATA_DIR=/data
 ENV PMN_CONFIG_PATH=/app/pmn_sources.yaml
 ENV DB_PATH=/data/utah_pmn.db
-ENV TEAMS_CHANNELS_CONFIG_PATH=/app/MS_Teams_channels.yaml
 ENV PROMPT_TEMPLATE_PATH=/app/prompt_template.default.txt
 CMD ["python", "agenda_downloader.py"]

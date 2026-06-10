@@ -9,10 +9,8 @@ sources:
     public_body_id: "1360"
     base_url: https://www.utah.gov/pmn
     storage_dir: /data/incoming/PMN/salt_lake_city/city_council
-    county: Salt Lake
-    route_key: salt_lake
-    mention_key: salt_lake_city
-    tag_key: salt_lake_city_watchers
+    channel_name: Salt Lake
+    tag_name: Salt Lake City
 
   - name: salt_lake_city_planning_commission
     government_type: municipality
@@ -22,7 +20,5 @@ sources:
     public_body_id: "1274"
     base_url: https://www.utah.gov/pmn
     storage_dir: /data/incoming/PMN/salt_lake_city/planning_commission
-    county: Salt Lake
-    route_key: salt_lake
-    mention_key: salt_lake_city
-    tag_key: salt_lake_city_watchers
+    channel_name: Salt Lake
+    tag_name: Salt Lake City

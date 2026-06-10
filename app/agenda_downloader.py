@@ -30,6 +30,8 @@ def get_db_conn():
         public_body TEXT,
         public_body_id TEXT,
         county TEXT,
+        channel_name TEXT,
+        tag_name TEXT,
         route_key TEXT,
         mention_key TEXT,
         tag_key TEXT,
@@ -50,6 +52,8 @@ def get_db_conn():
     _ensure_column(conn, "agendas", "public_body", "TEXT")
     _ensure_column(conn, "agendas", "public_body_id", "TEXT")
     _ensure_column(conn, "agendas", "county", "TEXT")
+    _ensure_column(conn, "agendas", "channel_name", "TEXT")
+    _ensure_column(conn, "agendas", "tag_name", "TEXT")
     _ensure_column(conn, "agendas", "route_key", "TEXT")
     _ensure_column(conn, "agendas", "mention_key", "TEXT")
     _ensure_column(conn, "agendas", "tag_key", "TEXT")
@@ -75,11 +79,11 @@ def log_pdf(conn, city, feed_name, title, pdf_url, local_path, metadata=None):
         (
             city, feed_name, meeting_title, meeting_date, pdf_url, local_path, downloaded_at,
             notice_id, notice_url, source_name, government_type, entity, entity_id, public_body, public_body_id,
-            county, route_key, mention_key, tag_key,
+            county, channel_name, tag_name, route_key, mention_key, tag_key,
             attachment_category, attachment_date_added, event_datetime_raw,
             notice_tags, description_agenda, attachment_count, attachment_urls
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             city,
             feed_name,
@@ -97,6 +101,8 @@ def log_pdf(conn, city, feed_name, title, pdf_url, local_path, metadata=None):
             metadata.get("public_body"),
             metadata.get("public_body_id"),
             metadata.get("county"),
+            metadata.get("channel_name"),
+            metadata.get("tag_name"),
             metadata.get("route_key"),
             metadata.get("mention_key"),
             metadata.get("tag_key"),

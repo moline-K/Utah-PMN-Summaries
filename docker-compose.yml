@@ -33,7 +33,7 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - PMN_CONFIG_PATH=/app/pmn_sources.yaml
-      - TEAMS_CHANNELS_CONFIG_PATH=/app/MS_Teams_channels.yaml
+      - TEAMS_FLOW_WEBHOOK_URL=${TEAMS_FLOW_WEBHOOK_URL}
       - DB_PATH=${DB_PATH:-/data/utah_pmn.db}
       - PROMPT_TEMPLATE_PATH=${PROMPT_TEMPLATE_PATH:-/app/prompt_template.default.txt}
     volumes:
@@ -41,12 +41,6 @@ services:
       - type: bind
         source: ./pmn_sources.yaml
         target: /app/pmn_sources.yaml
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ./MS_Teams_channels.yaml
-        target: /app/MS_Teams_channels.yaml
         read_only: true
         bind:
           create_host_path: false

@@ -4,8 +4,8 @@ entities:
   - government_type: municipality
     entity: Eagle Mountain
     entity_id: "116"
-    county: Utah
-    route_key: utah
+    channel_name: Utah
+    tag_name: Eagle Mountain
     public_bodies:
       - public_body: City Council
         public_body_id: "535"
@@ -15,10 +15,8 @@ entities:
   - government_type: municipality
     entity: Salt Lake City
     entity_id: "259"
-    county: Salt Lake
-    route_key: salt_lake
-    mention_key: salt_lake_city
-    tag_key: salt_lake_city
+    channel_name: Salt Lake
+    tag_name: Salt Lake City
     public_bodies:
       - public_body: Salt Lake City Council
         public_body_id: "1360"
