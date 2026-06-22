@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-import os, sqlite3, datetime, yaml
+import datetime
+import os
+import sqlite3
+
+import yaml
 from scrapers import utah_pmn
 
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "utah_pmn.db"))
 PMN_CONFIG_PATH = os.getenv("PMN_CONFIG_PATH", "pmn_sources.yaml")
+DEFAULT_BOOTSTRAP_RECENCY_DAYS = 5
+
 
 def get_db_conn():
     conn = sqlite3.connect(DB_PATH)
@@ -37,11 +43,12 @@ def get_db_conn():
         tag_key TEXT,
         attachment_category TEXT,
         attachment_date_added TEXT,
-        event_datetime_raw TEXT
-        ,notice_tags TEXT
-        ,description_agenda TEXT
-        ,attachment_count INTEGER
-        ,attachment_urls TEXT
+        event_datetime_raw TEXT,
+        notice_tags TEXT,
+        description_agenda TEXT,
+        attachment_count INTEGER,
+        attachment_urls TEXT,
+        notification_eligible INTEGER NOT NULL DEFAULT 1
     )""")
     _ensure_column(conn, "agendas", "notice_id", "TEXT")
     _ensure_column(conn, "agendas", "notice_url", "TEXT")
@@ -64,13 +71,16 @@ def get_db_conn():
     _ensure_column(conn, "agendas", "description_agenda", "TEXT")
     _ensure_column(conn, "agendas", "attachment_count", "INTEGER")
     _ensure_column(conn, "agendas", "attachment_urls", "TEXT")
+    _ensure_column(conn, "agendas", "notification_eligible", "INTEGER NOT NULL DEFAULT 1")
     return conn
+
 
 def _ensure_column(conn, table_name, column_name, column_type):
     existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})")}
     if column_name not in existing:
         conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
         conn.commit()
+
 
 def log_pdf(conn, city, feed_name, title, pdf_url, local_path, metadata=None):
     metadata = metadata or {}
@@ -81,9 +91,9 @@ def log_pdf(conn, city, feed_name, title, pdf_url, local_path, metadata=None):
             notice_id, notice_url, source_name, government_type, entity, entity_id, public_body, public_body_id,
             county, channel_name, tag_name, route_key, mention_key, tag_key,
             attachment_category, attachment_date_added, event_datetime_raw,
-            notice_tags, description_agenda, attachment_count, attachment_urls
+            notice_tags, description_agenda, attachment_count, attachment_urls, notification_eligible
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             city,
             feed_name,
@@ -113,8 +123,10 @@ def log_pdf(conn, city, feed_name, title, pdf_url, local_path, metadata=None):
             metadata.get("description_agenda"),
             metadata.get("attachment_count"),
             metadata.get("attachment_urls"),
+            metadata.get("notification_eligible", 1),
         ))
     conn.commit()
+
 
 def load_pmn_sources(config_path):
     with open(config_path, "r", encoding="utf-8") as f:
@@ -122,9 +134,34 @@ def load_pmn_sources(config_path):
     return config.get("sources", [])
 
 
+def get_bootstrap_recency_days():
+    raw_value = os.getenv("BOOTSTRAP_RECENCY_DAYS", str(DEFAULT_BOOTSTRAP_RECENCY_DAYS)).strip()
+    try:
+        days = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid BOOTSTRAP_RECENCY_DAYS value: {raw_value!r}") from exc
+    if days < 0:
+        raise ValueError("BOOTSTRAP_RECENCY_DAYS must be >= 0")
+    return days
+
+
+def source_has_history(conn, public_body_id):
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM agendas
+        WHERE public_body_id=?
+        LIMIT 1
+        """,
+        (str(public_body_id or ""),),
+    ).fetchone()
+    return row is not None
+
+
 def main():
     sources = load_pmn_sources(PMN_CONFIG_PATH)
     conn = get_db_conn()
+    bootstrap_recency_days = get_bootstrap_recency_days()
     existing_notice_ids = set(
         row[0] for row in conn.execute("SELECT notice_id FROM agendas WHERE notice_id IS NOT NULL")
     )
@@ -137,6 +174,7 @@ def main():
         if not public_body_id:
             print(f"[WARN] Skipping source with missing public_body_id: {source.get('name', '<unnamed>')}")
             continue
+        source_seeded = source_has_history(conn, public_body_id)
         feed_url = f"{base_url}/sitemap/publicbody/{public_body_id}.html"
         storage_dir = source.get("storage_dir")
 
@@ -149,6 +187,8 @@ def main():
             known_notice_ids=existing_notice_ids,
             storage_dir=storage_dir,
             source_meta=source,
+            source_seeded=source_seeded,
+            bootstrap_recency_days=bootstrap_recency_days,
         )
         for record in items:
             log_pdf(
@@ -165,6 +205,7 @@ def main():
 
     conn.close()
     print("\n✅ Download complete.")
+
 
 if __name__ == "__main__":
     main()

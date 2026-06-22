@@ -54,6 +54,7 @@ class BaseSummarizer:
     def process_unsummarized(self, city_filter=None):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        self._ensure_notification_eligible_column(conn)
         cur = conn.cursor()
         query = """
             SELECT
@@ -84,7 +85,7 @@ class BaseSummarizer:
                 attachment_category,
                 attachment_count
             FROM agendas
-            WHERE summarized=0
+            WHERE summarized=0 AND notification_eligible=1
         """
         params = []
         if city_filter:
@@ -157,6 +158,14 @@ class BaseSummarizer:
                 print(f"[ERROR] {city}/{feed}: {exc}")
 
         conn.close()
+
+    def _ensure_notification_eligible_column(self, conn):
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(agendas)")}
+        if "notification_eligible" not in existing:
+            conn.execute(
+                "ALTER TABLE agendas ADD COLUMN notification_eligible INTEGER NOT NULL DEFAULT 1"
+            )
+            conn.commit()
 
     def determine_doc_type(self, pdf_path):
         name = Path(pdf_path).name.lower()

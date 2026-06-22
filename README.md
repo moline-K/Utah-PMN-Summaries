@@ -96,6 +96,13 @@ Default runtime paths:
 - `PMN_CONFIG_PATH=/app/pmn_sources.yaml`
 - `DB_PATH=/data/utah_pmn.db`
 - `PROMPT_TEMPLATE_PATH=/app/prompt_template.default.txt`
+- `BOOTSTRAP_RECENCY_DAYS=5`
+
+Bootstrap behavior:
+- When a `public_body_id` is first seen locally, historical notices are still stored.
+- On that first seed only, notices are summarized and notified only if their normalized meeting date is within the last 5 days by default.
+- After a source already has local history, newly discovered notices are eligible normally.
+- Notices without a normalized meeting date are suppressed during first-seed bootstrap.
 
 Run the pipeline:
 

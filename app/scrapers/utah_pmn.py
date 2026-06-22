@@ -1,9 +1,9 @@
-import os
 import json
+import os
 import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
-from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
@@ -27,7 +27,17 @@ MEDIA_EXTENSIONS = {
 }
 
 
-def scrape_feed(feed_url, base_url, city, feed_name, known_notice_ids=None, storage_dir=None, source_meta=None):
+def scrape_feed(
+    feed_url,
+    base_url,
+    city,
+    feed_name,
+    known_notice_ids=None,
+    storage_dir=None,
+    source_meta=None,
+    source_seeded=True,
+    bootstrap_recency_days=5,
+):
     """
     Scrape a Utah PMN public body listing page and download new attachments.
 
@@ -83,10 +93,19 @@ def scrape_feed(feed_url, base_url, city, feed_name, known_notice_ids=None, stor
             attachment_category = None
             attachment_date_added = None
 
+        meeting_date = normalize_meeting_date(metadata.get("event_start"))
+        notification_eligible = int(
+            is_notice_notification_eligible(
+                meeting_date,
+                source_seeded=source_seeded,
+                bootstrap_recency_days=bootstrap_recency_days,
+            )
+        )
+
         results.append(
             {
                 "title": metadata.get("notice_title") or notice.get("title") or "PMN Notice",
-                "meeting_date": normalize_meeting_date(metadata.get("event_start")),
+                "meeting_date": meeting_date,
                 "pdf_url": pdf_url,
                 "local_path": local_path,
                 "notice_id": notice_id,
@@ -112,6 +131,7 @@ def scrape_feed(feed_url, base_url, city, feed_name, known_notice_ids=None, stor
                 "attachment_urls": json.dumps(
                     [att["file_url"] for att in valid_attachments], ensure_ascii=True
                 ),
+                "notification_eligible": notification_eligible,
             }
         )
 
@@ -298,6 +318,21 @@ def normalize_meeting_date(value):
     if match:
         return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
     return None
+
+
+def is_notice_notification_eligible(meeting_date, source_seeded, bootstrap_recency_days, today=None):
+    if source_seeded:
+        return True
+    if not meeting_date:
+        return False
+    if today is None:
+        today = datetime.now().date()
+    try:
+        meeting_day = datetime.strptime(meeting_date, "%Y-%m-%d").date()
+    except ValueError:
+        return False
+    cutoff = today - timedelta(days=bootstrap_recency_days)
+    return meeting_day >= cutoff
 
 
 def _extract_notice_id(notice_url):
